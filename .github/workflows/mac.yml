@@ -1,0 +1,112 @@
+name: hallo
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '0 */6 * * *'  # Menjalankan setiap 6 jam
+
+jobs:
+  setup_rdp:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install ZeroTier
+        run: |
+          # Mengunduh dan menginstal ZeroTier
+          curl -o /tmp/ZeroTierOne.pkg "https://download.zerotier.com/dist/ZeroTier%20One.pkg"
+          sudo installer -pkg /tmp/ZeroTierOne.pkg -target /
+
+      - name: Verify ZeroTier Installation
+        run: |
+          # Memeriksa apakah ZeroTier terinstal
+          path="/Library/Application Support/ZeroTier/One"
+          if [ -d "$path" ]; then
+              echo "ZeroTier is installed at: $path"
+          else
+              echo "ZeroTier is not installed at the expected path: $path"
+              exit 1
+          fi
+
+      - name: Join ZeroTier Network
+        env:
+          NETWORK_ID: ${{ secrets.ZEROTIER_NETWORK_ID }}
+        run: |
+          # Bergabung dengan jaringan ZeroTier
+          sudo /usr/local/bin/zerotier-cli join $NETWORK_ID
+
+      - name: Configure Firewall to Allow VNC
+        run: |
+          # Mengizinkan port 5900 untuk VNC (pengganti RDP di macOS)
+          # dan port 7575 untuk StreamFlow
+          sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /usr/libexec/screensharingd
+          sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp /usr/libexec/screensharingd
+          # Enable remote login (SSH port 22)
+          sudo systemsetup -setremotelogin on
+          # Enable screen sharing (VNC port 5900)
+          sudo defaults write /var/db/launchd.db/com.apple.launchd/overrides.plist com.apple.screensharing -dict Disabled -bool false
+          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist
+
+      - name: Set VNC/Remote User Password
+        env:
+          RDP_USERNAME: ${{ secrets.RDP_USERNAME }}
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          username=$RDP_USERNAME
+          password=$RDP_PASSWORD
+
+          # Membuat pengguna baru jika belum ada
+          if ! id "$username" &>/dev/null; then
+              sudo dscl . -create /Users/$username
+              sudo dscl . -create /Users/$username UserShell /bin/bash
+              sudo dscl . -create /Users/$username RealName "$username"
+              sudo dscl . -create /Users/$username UniqueID "1001"
+              sudo dscl . -create /Users/$username PrimaryGroupID 80
+              sudo dscl . -create /Users/$username NFSHomeDirectory /Users/$username
+              sudo dscl . -passwd /Users/$username $password
+              sudo createhomedir -c -u $username
+              echo "User $username created."
+          else
+              echo "User $username already exists. Setting password."
+              sudo dscl . -passwd /Users/$username $password
+          fi
+
+          # Set VNC password
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on \
+            -clientopts -setvnclegacy -vnclegacy yes \
+            -clientopts -setvncpw -vncpw $password \
+            -restart -agent -privs -all
+
+      - name: Get Hostname and ZeroTier IP Address
+        run: |
+          # Mendapatkan hostname
+          hostname=$(hostname)
+          # Mendapatkan IP address ZeroTier
+          ztIPAddress=$(ifconfig | grep -A1 "feth\|zt" | grep "inet " | awk '{print $2}' | head -1)
+
+          echo "Hostname: $hostname"
+          echo "ZeroTier IP Address: $ztIPAddress"
+
+      - name: Display Connection Instructions
+        run: |
+          ztIPAddress=$(ifconfig | grep -A1 "feth\|zt" | grep "inet " | awk '{print $2}' | head -1)
+          echo "Setup complete."
+          echo "VNC: Buka Finder > Go > Connect to Server > vnc://$ztIPAddress"
+          echo "SSH: ssh ${{ secrets.RDP_USERNAME }}@$ztIPAddress"
+
+      # - name: Download file bat
+      #   run: |
+      #     folder="$HOME/app"
+      #     mkdir -p $folder
+      #     dl="$folder/run.sh"
+      #     curl -o $dl "https://raw.githubusercontent.com/ululnuta72/sflow/main/y.bat"
+      #     chmod +x $dl
+      #     bash $dl
+
+      - name: Pending Step (Sleep for 6 Hours)
+        run: |
+          echo "Pending for 6 hours to keep session active..."
+          sleep 21600
