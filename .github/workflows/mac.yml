@@ -1,4 +1,4 @@
-name: hallo
+name: mac
 
 on:
   workflow_dispatch:
